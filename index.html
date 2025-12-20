@@ -1,0 +1,683 @@
+import React, { useState } from 'react';
+import { BookOpen, Play, CheckCircle, XCircle, Lightbulb, RotateCcw, Trophy, AlertCircle } from 'lucide-react';
+
+const SPADETutorial = () => {
+  const [activeTab, setActiveTab] = useState('tutorial');
+  const [gameStep, setGameStep] = useState(0);
+  const [userAnswer, setUserAnswer] = useState('');
+  const [showHint, setShowHint] = useState(false);
+  const [score, setScore] = useState(0);
+  const [attempts, setAttempts] = useState(0);
+  const [feedback, setFeedback] = useState(null);
+  const [selectedExample, setSelectedExample] = useState(0);
+  const [completedSteps, setCompletedSteps] = useState([]);
+
+  const examples = [
+    {
+      name: "Mức Độ Dễ - Cửa Hàng Sách",
+      difficulty: "Dễ",
+      problem: "Phân tích thói quen mua sách của khách hàng trong một tháng. Mỗi sequence là lịch sử mua hàng của một khách hàng, các items là các loại sách (Novel, Comic, Magazine, Poetry). Tìm các pattern mua hàng phổ biến với min_support = 2.",
+      sequences: [
+        { sid: 1, items: [['N'], ['C'], ['M']] },
+        { sid: 2, items: [['N'], ['M']] },
+        { sid: 3, items: [['N'], ['C'], ['M']] },
+        { sid: 4, items: [['C'], ['M']] }
+      ],
+      minSupport: 2,
+      itemNames: { N: 'Novel', C: 'Comic', M: 'Magazine', P: 'Poetry' }
+    },
+    {
+      name: "Mức Độ Trung Bình - Ứng Dụng Di Động",
+      difficulty: "Trung Bình",
+      problem: "Phân tích hành vi sử dụng app của người dùng. Mỗi sequence là các actions của một user trong một phiên làm việc. Items: Login (L), Browse (B), Search (S), Purchase (P), Logout (O). Tìm patterns với min_support = 2.",
+      sequences: [
+        { sid: 1, items: [['L'], ['B', 'S'], ['P'], ['O']] },
+        { sid: 2, items: [['L'], ['B'], ['S'], ['P']] },
+        { sid: 3, items: [['L'], ['S'], ['P'], ['O']] },
+        { sid: 4, items: [['L'], ['B'], ['P']] }
+      ],
+      minSupport: 2,
+      itemNames: { L: 'Login', B: 'Browse', S: 'Search', P: 'Purchase', O: 'Logout' }
+    },
+    {
+      name: "Mức Độ Khó - Website E-commerce",
+      difficulty: "Khó",
+      problem: "Phân tích hành vi mua sắm trên website thời trang. Sequences là lịch sử mua hàng của khách, items là các danh mục sản phẩm: Shoes (S), Shirt (T), Pants (P), Accessories (A), Dress (D). Tìm frequent patterns với min_support = 3.",
+      sequences: [
+        { sid: 1, items: [['S', 'T'], ['P'], ['A']] },
+        { sid: 2, items: [['S'], ['T', 'P'], ['A']] },
+        { sid: 3, items: [['S'], ['T'], ['P'], ['A']] },
+        { sid: 4, items: [['T'], ['P'], ['A']] },
+        { sid: 5, items: [['S', 'T'], ['P']] }
+      ],
+      minSupport: 3,
+      itemNames: { S: 'Shoes', T: 'Shirt', P: 'Pants', A: 'Accessories', D: 'Dress' }
+    }
+  ];
+
+  const currentExample = examples[selectedExample];
+
+  const calculateAllFrequentPatterns = () => {
+    const sequences = currentExample.sequences;
+    const minSup = currentExample.minSupport;
+    
+    const items = {};
+    sequences.forEach(seq => {
+      const uniqueItems = new Set();
+      seq.items.forEach(itemset => {
+        itemset.forEach(item => uniqueItems.add(item));
+      });
+      uniqueItems.forEach(item => {
+        items[item] = (items[item] || 0) + 1;
+      });
+    });
+    
+    const freq1 = Object.keys(items)
+      .filter(item => items[item] >= minSup)
+      .sort();
+    
+    const freq2 = [];
+    for (let i = 0; i < freq1.length; i++) {
+      for (let j = 0; j < freq1.length; j++) {
+        const pattern = [freq1[i], freq1[j]];
+        const support = sequences.filter(seq => {
+          let foundFirst = false;
+          for (let itemset of seq.items) {
+            if (itemset.includes(pattern[0])) foundFirst = true;
+            if (foundFirst && itemset.includes(pattern[1])) return true;
+          }
+          return false;
+        }).length;
+        
+        if (support >= minSup) {
+          freq2.push({ pattern: pattern.join(','), support });
+        }
+      }
+    }
+    
+    const freq3 = [];
+    const freq2Patterns = freq2.map(f => f.pattern.split(','));
+    
+    for (let i = 0; i < freq2Patterns.length; i++) {
+      for (let j = 0; j < freq1.length; j++) {
+        const pattern = [...freq2Patterns[i], freq1[j]];
+        const support = sequences.filter(seq => {
+          let indices = [-1, -1, -1];
+          for (let k = 0; k < seq.items.length; k++) {
+            if (indices[0] === -1 && seq.items[k].includes(pattern[0])) indices[0] = k;
+            if (indices[0] !== -1 && indices[1] === -1 && seq.items[k].includes(pattern[1])) indices[1] = k;
+            if (indices[1] !== -1 && indices[2] === -1 && seq.items[k].includes(pattern[2])) indices[2] = k;
+          }
+          return indices[0] < indices[1] && indices[1] < indices[2] && indices[2] !== -1;
+        }).length;
+        
+        if (support >= minSup) {
+          freq3.push({ pattern: pattern.join(','), support });
+        }
+      }
+    }
+    
+    return {
+      freq1: freq1.map(item => ({ pattern: item, support: items[item] })),
+      freq2: freq2,
+      freq3: freq3
+    };
+  };
+
+  const gameSteps = [
+    {
+      title: "Bước 1: Tạo Vertical Database",
+      question: `Với chuỗi đã cho, item '${Object.keys(currentExample.itemNames)[0]}' xuất hiện ở những sequence ID nào?`,
+      exampleAnswer: "1,2,3",
+      correctAnswer: currentExample.sequences
+        .filter(seq => seq.items.some(itemset => itemset.includes(Object.keys(currentExample.itemNames)[0])))
+        .map(seq => seq.sid)
+        .join(','),
+      hint: "Vertical database lưu vị trí xuất hiện của mỗi item. Hãy kiểm tra từng sequence xem item có xuất hiện không. Trả lời dạng: 1,2,3",
+      explanation: "Vertical database chuyển đổi dữ liệu từ dạng ngang sang dọc, lưu danh sách các sequence ID chứa mỗi item. Điều này giúp tính support nhanh hơn."
+    },
+    {
+      title: "Bước 2: Tính Support của Item",
+      question: `Item '${Object.keys(currentExample.itemNames)[2] || 'C'}' xuất hiện trong bao nhiêu sequences?`,
+      exampleAnswer: "3",
+      correctAnswer: String(currentExample.sequences
+        .filter(seq => seq.items.some(itemset => itemset.includes(Object.keys(currentExample.itemNames)[2] || 'C')))
+        .length),
+      hint: "Support count = số lượng sequences chứa item đó. Đếm số sequence có chứa item này. Trả lời là một số.",
+      explanation: "Support count là số lượng sequences chứa item. Nếu support >= minSupport, item đó là frequent và sẽ được dùng để tạo patterns dài hơn."
+    },
+    {
+      title: "Bước 3: Tìm Frequent 1-sequences",
+      question: `Với min_support = ${currentExample.minSupport}, những item nào là frequent?`,
+      exampleAnswer: "A,B,C",
+      correctAnswer: (() => {
+        const items = {};
+        currentExample.sequences.forEach(seq => {
+          const uniqueItems = new Set();
+          seq.items.forEach(itemset => {
+            itemset.forEach(item => uniqueItems.add(item));
+          });
+          uniqueItems.forEach(item => {
+            items[item] = (items[item] || 0) + 1;
+          });
+        });
+        return Object.keys(items)
+          .filter(item => items[item] >= currentExample.minSupport)
+          .sort()
+          .join(',');
+      })(),
+      hint: "Kiểm tra support count của mỗi item. Item nào có support >= min_support thì frequent. Trả lời dạng: A,B,C (theo thứ tự alphabet).",
+      explanation: "Frequent 1-sequences là các items đơn có support count >= min_support threshold. Chỉ các items frequent mới được dùng để tạo patterns dài hơn."
+    },
+    {
+      title: "Bước 4: Join Sequences",
+      question: `Khi join <${Object.keys(currentExample.itemNames)[0]}> và <${Object.keys(currentExample.itemNames)[1] || 'C'}>, ta được sequence pattern nào?`,
+      exampleAnswer: "A,B",
+      correctAnswer: `${Object.keys(currentExample.itemNames)[0]},${Object.keys(currentExample.itemNames)[1] || 'C'}`,
+      hint: `Join hai 1-sequences tạo thành 2-sequence. <${Object.keys(currentExample.itemNames)[0]}><${Object.keys(currentExample.itemNames)[1] || 'C'}> nghĩa là ${Object.keys(currentExample.itemNames)[0]} xuất hiện trước ${Object.keys(currentExample.itemNames)[1] || 'C'}. Trả lời dạng: A,B`,
+      explanation: "SPADE join các frequent k-sequences để tạo (k+1)-sequences candidates. Temporal ordering (thứ tự thời gian) được giữ nguyên trong pattern."
+    },
+    {
+      title: "Bước 5: Tính Support của 2-sequences",
+      question: `Pattern <${Object.keys(currentExample.itemNames)[0]}><${Object.keys(currentExample.itemNames)[1] || 'C'}> (${Object.keys(currentExample.itemNames)[0]} trước ${Object.keys(currentExample.itemNames)[1] || 'C'}) có support count bao nhiêu?`,
+      exampleAnswer: "3",
+      correctAnswer: String(currentExample.sequences.filter(seq => {
+        let foundFirst = false;
+        const first = Object.keys(currentExample.itemNames)[0];
+        const second = Object.keys(currentExample.itemNames)[1] || 'C';
+        for (let itemset of seq.items) {
+          if (itemset.includes(first)) foundFirst = true;
+          if (foundFirst && itemset.includes(second)) return true;
+        }
+        return false;
+      }).length),
+      hint: "Đếm số sequences mà item đầu xuất hiện TRƯỚC item thứ hai (theo thứ tự thời gian). Trả lời là một số.",
+      explanation: "Để tính support của pattern, ta đếm số sequences chứa pattern đó với đúng thứ tự temporal. Quá trình này lặp lại cho patterns dài hơn (3-sequences, 4-sequences...) cho đến khi không tìm được frequent patterns mới."
+    }
+  ];
+
+  const currentStep = gameSteps[gameStep];
+
+  const checkAnswer = () => {
+    const normalized = userAnswer.trim().toUpperCase().replace(/\s/g, '');
+    const correct = currentStep.correctAnswer.toUpperCase().replace(/\s/g, '');
+    
+    setAttempts(attempts + 1);
+    
+    if (normalized === correct) {
+      setFeedback({ type: 'success', message: '🎉 Chính xác! Tuyệt vời!' });
+      setScore(score + 1);
+      setCompletedSteps([...completedSteps, gameStep]);
+      setTimeout(() => {
+        if (gameStep < gameSteps.length - 1) {
+          setGameStep(gameStep + 1);
+          setUserAnswer('');
+          setFeedback(null);
+          setShowHint(false);
+        } else {
+          setGameStep(gameStep + 1);
+          setUserAnswer('');
+          setFeedback(null);
+          setShowHint(false);
+        }
+      }, 1500);
+    } else {
+      setFeedback({ type: 'error', message: '❌ Chưa đúng. Hãy thử lại hoặc xem gợi ý!' });
+    }
+  };
+
+  const resetGame = () => {
+    setGameStep(0);
+    setUserAnswer('');
+    setShowHint(false);
+    setScore(0);
+    setAttempts(0);
+    setFeedback(null);
+    setCompletedSteps([]);
+  };
+
+  const ResultsPage = () => {
+    const results = calculateAllFrequentPatterns();
+    
+    return (
+      <div className="space-y-6">
+        <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-8 rounded-xl text-center">
+          <Trophy className="mx-auto mb-4" size={64} />
+          <h3 className="text-3xl font-bold mb-2">🎉 Hoàn Thành!</h3>
+          <p className="text-xl mb-4">
+            Điểm số: {score}/{attempts} câu đúng
+          </p>
+          <div className="text-lg">
+            Độ chính xác: {attempts > 0 ? Math.round((score/attempts) * 100) : 0}%
+          </div>
+        </div>
+
+        <div className="bg-white border-2 border-indigo-200 rounded-xl p-6">
+          <h3 className="text-2xl font-bold text-indigo-800 mb-4 flex items-center gap-2">
+            <CheckCircle className="text-green-500" />
+            Kết Quả Thuật Toán SPADE
+          </h3>
+          
+          <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+            <p className="font-semibold text-gray-700">Bài toán: {currentExample.problem}</p>
+            <p className="text-sm text-gray-600 mt-2">Min Support: {currentExample.minSupport}</p>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <h4 className="text-xl font-semibold text-indigo-700 mb-3 flex items-center gap-2">
+                📊 Frequent 1-Sequences
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {results.freq1.map((item, idx) => (
+                  <div key={idx} className="bg-indigo-50 p-4 rounded-lg border-l-4 border-indigo-500">
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono font-bold text-lg">
+                        &lt;{item.pattern}&gt;
+                      </span>
+                      <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                        Support: {item.support}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {currentExample.itemNames[item.pattern]}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {results.freq2.length > 0 && (
+              <div>
+                <h4 className="text-xl font-semibold text-purple-700 mb-3 flex items-center gap-2">
+                  📈 Frequent 2-Sequences
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {results.freq2.map((item, idx) => (
+                    <div key={idx} className="bg-purple-50 p-4 rounded-lg border-l-4 border-purple-500">
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono font-bold text-lg">
+                          &lt;{item.pattern.split(',')[0]}&gt;&lt;{item.pattern.split(',')[1]}&gt;
+                        </span>
+                        <span className="bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                          Support: {item.support}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {currentExample.itemNames[item.pattern.split(',')[0]]} → {currentExample.itemNames[item.pattern.split(',')[1]]}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {results.freq3.length > 0 && (
+              <div>
+                <h4 className="text-xl font-semibold text-pink-700 mb-3 flex items-center gap-2">
+                  🚀 Frequent 3-Sequences
+                </h4>
+                <div className="grid grid-cols-1 gap-3">
+                  {results.freq3.map((item, idx) => (
+                    <div key={idx} className="bg-pink-50 p-4 rounded-lg border-l-4 border-pink-500">
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono font-bold text-lg">
+                          {item.pattern.split(',').map(p => `<${p}>`).join('')}
+                        </span>
+                        <span className="bg-pink-600 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                          Support: {item.support}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {item.pattern.split(',').map(p => currentExample.itemNames[p]).join(' → ')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {results.freq2.length === 0 && results.freq3.length === 0 && (
+              <div className="bg-yellow-50 p-4 rounded-lg border-l-4 border-yellow-500">
+                <p className="text-yellow-800">
+                  ℹ️ Không tìm thấy frequent sequences dài hơn với min_support = {currentExample.minSupport}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
+            <h4 className="font-semibold text-indigo-800 mb-2">💡 Tổng Kết:</h4>
+            <ul className="space-y-1 text-sm text-gray-700">
+              <li>• Tổng số Frequent 1-Sequences: <strong>{results.freq1.length}</strong></li>
+              <li>• Tổng số Frequent 2-Sequences: <strong>{results.freq2.length}</strong></li>
+              <li>• Tổng số Frequent 3-Sequences: <strong>{results.freq3.length}</strong></li>
+              <li className="mt-2 text-indigo-700 font-semibold">
+                • Thuật toán dừng khi không tìm được frequent patterns mới
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="flex gap-4">
+          <button
+            onClick={resetGame}
+            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-lg transition flex items-center justify-center gap-2"
+          >
+            <RotateCcw size={20} />
+            Chơi Lại Ví Dụ Này
+          </button>
+          <button
+            onClick={() => {
+              if (selectedExample < examples.length - 1) {
+                setSelectedExample(selectedExample + 1);
+                resetGame();
+              }
+            }}
+            disabled={selectedExample === examples.length - 1}
+            className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-4 px-6 rounded-lg transition flex items-center justify-center gap-2"
+          >
+            Ví Dụ Tiếp Theo →
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="max-w-6xl mx-auto">
+        <header className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-indigo-900 mb-2">
+            SPADE Algorithm Tutorial
+          </h1>
+          <p className="text-lg text-gray-700">
+            Sequential Pattern Discovery using Equivalence classes
+          </p>
+        </header>
+
+        <div className="flex gap-4 mb-6">
+          <button
+            onClick={() => setActiveTab('tutorial')}
+            className={`flex-1 py-3 px-6 rounded-lg font-semibold flex items-center justify-center gap-2 transition ${
+              activeTab === 'tutorial'
+                ? 'bg-indigo-600 text-white shadow-lg'
+                : 'bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <BookOpen size={20} />
+            Hướng Dẫn
+          </button>
+          <button
+            onClick={() => setActiveTab('game')}
+            className={`flex-1 py-3 px-6 rounded-lg font-semibold flex items-center justify-center gap-2 transition ${
+              activeTab === 'game'
+                ? 'bg-indigo-600 text-white shadow-lg'
+                : 'bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <Play size={20} />
+            Trò Chơi Tương Tác
+          </button>
+        </div>
+
+        {activeTab === 'tutorial' && (
+          <div className="bg-white rounded-xl shadow-xl p-8">
+            <h2 className="text-3xl font-bold text-indigo-800 mb-6">
+              Thuật Toán SPADE Là Gì?
+            </h2>
+            
+            <div className="space-y-6">
+              <section>
+                <h3 className="text-2xl font-semibold text-indigo-700 mb-3">
+                  📖 Giới Thiệu
+                </h3>
+                <p className="text-gray-700 leading-relaxed">
+                  SPADE (Sequential Pattern Discovery using Equivalence classes) là thuật toán hiệu quả để tìm các pattern tuần tự trong cơ sở dữ liệu lớn. Thuật toán sử dụng vertical database format và lattice search để tăng tốc độ xử lý.
+                </p>
+              </section>
+
+              <section className="bg-indigo-50 p-6 rounded-lg">
+                <h3 className="text-2xl font-semibold text-indigo-700 mb-4">
+                  🔍 Các Bước Chính
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                      1
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-lg mb-1">Tạo Vertical Database</h4>
+                      <p className="text-gray-700">
+                        Chuyển đổi dữ liệu sang dạng vertical ID-list, lưu vị trí xuất hiện của mỗi item
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                      2
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-lg mb-1">Tìm Frequent 1-sequences</h4>
+                      <p className="text-gray-700">
+                        Quét database để tìm các items đơn có support count ≥ min_support
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                      3
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-lg mb-1">Join & Generate Candidates</h4>
+                      <p className="text-gray-700">
+                        Kết hợp các frequent k-sequences để tạo (k+1)-sequences candidates
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                      4
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-lg mb-1">Tính Support & Prune</h4>
+                      <p className="text-gray-700">
+                        Tính support của candidates và loại bỏ những patterns không frequent
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                      5
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-lg mb-1">Lặp Lại Cho Đến Khi Không Tìm Được Patterns Mới</h4>
+                      <p className="text-gray-700">
+                        Tiếp tục quá trình join và tính support cho 3-sequences, 4-sequences... cho đến khi không tìm được frequent patterns mới nào
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-2xl font-semibold text-indigo-700 mb-3">
+                  💡 Ưu Điểm
+                </h3>
+                <ul className="list-disc list-inside space-y-2 text-gray-700">
+                  <li>Hiệu quả cao với cơ sở dữ liệu lớn</li>
+                  <li>Sử dụng vertical database giảm số lần scan</li>
+                  <li>Join operations đơn giản và nhanh</li>
+                  <li>Có thể song song hóa dễ dàng</li>
+                </ul>
+              </section>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'game' && (
+          <div className="bg-white rounded-xl shadow-xl p-8">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-indigo-800">
+                  Trò Chơi Học SPADE
+                </h2>
+                <p className="text-gray-600">
+                  {gameStep < gameSteps.length ? `Bước ${gameStep + 1} / ${gameSteps.length}` : 'Kết Quả'}
+                </p>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="bg-green-100 px-4 py-2 rounded-lg flex items-center gap-2">
+                  <Trophy className="text-green-600" size={20} />
+                  <span className="font-bold text-green-700">Điểm: {score}/{attempts}</span>
+                </div>
+                <button
+                  onClick={resetGame}
+                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+                  title="Chơi lại"
+                >
+                  <RotateCcw size={20} />
+                </button>
+              </div>
+            </div>
+
+            {gameStep === 0 && (
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Chọn Mức Độ:
+                </label>
+                <select
+                  value={selectedExample}
+                  onChange={(e) => {
+                    setSelectedExample(Number(e.target.value));
+                    resetGame();
+                  }}
+                  className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none"
+                >
+                  {examples.map((ex, idx) => (
+                    <option key={idx} value={idx}>
+                      {ex.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-3 p-4 bg-blue-50 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="text-blue-600 mt-1 flex-shrink-0" size={20} />
+                    <div>
+                      <p className="font-semibold text-blue-900 mb-2">Đề bài:</p>
+                      <p className="text-sm text-gray-700">{currentExample.problem}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {gameStep < gameSteps.length && (
+              <>
+                <div className="bg-blue-50 p-6 rounded-lg mb-6">
+                  <h3 className="font-semibold text-lg mb-3">Dữ Liệu Sequences:</h3>
+                  <div className="space-y-2 font-mono text-sm">
+                    {currentExample.sequences.map((seq) => (
+                      <div key={seq.sid} className="bg-white p-3 rounded">
+                        <span className="font-bold">S{seq.sid}:</span>{' '}
+                        {seq.items.map((itemset, idx) => (
+                          <span key={idx}>
+                            {itemset.length > 1 ? `(${itemset.join(',')})` : itemset[0]}
+                            {idx < seq.items.length - 1 ? ' → ' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-sm text-gray-700">
+                    <strong>Min Support:</strong> {currentExample.minSupport}
+                  </p>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-6 rounded-lg">
+                    <h3 className="text-xl font-bold mb-2">{currentStep.title}</h3>
+                    <p className="text-lg mb-3">{currentStep.question}</p>
+                    <div className="bg-white/20 backdrop-blur-sm p-3 rounded">
+                      <p className="text-sm">
+                        <strong>Ví dụ trả lời:</strong> {currentStep.exampleAnswer}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <input
+                      type="text"
+                      value={userAnswer}
+                      onChange={(e) => setUserAnswer(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && checkAnswer()}
+                      placeholder="Nhập câu trả lời..."
+                      className="w-full p-4 text-lg border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none"
+                    />
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={checkAnswer}
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle size={20} />
+                        Kiểm Tra
+                      </button>
+                      <button
+                        onClick={() => setShowHint(!showHint)}
+                        className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-6 rounded-lg transition flex items-center gap-2"
+                      >
+                        <Lightbulb size={20} />
+                        Gợi Ý
+                      </button>
+                    </div>
+
+                    {showHint && (
+                      <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
+                        <p className="text-yellow-800">
+                          <strong>💡 Gợi ý:</strong> {currentStep.hint}
+                        </p>
+                      </div>
+                    )}
+
+                    {feedback && (
+                      <div
+                        className={`border-l-4 p-4 rounded ${
+                          feedback.type === 'success'
+                            ? 'bg-green-50 border-green-500'
+                            : 'bg-red-50 border-red-500'
+                        }`}
+                      >
+                        <p
+                          className={
+                            feedback.type === 'success' ? 'text-green-800' : 'text-red-800'
+                          }
+                        >
+                          {feedback.message}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-sm text-gray-700">
+                        <strong>📚 Giải thích:</strong> {currentStep.explanation}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {gameStep === gameSteps.length && <ResultsPage />}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default SPADETutorial;
